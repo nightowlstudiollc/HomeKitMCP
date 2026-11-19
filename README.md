@@ -14,22 +14,30 @@ Built as a Mac Catalyst app using the native HomeKit framework and the [official
 ## Building
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/grahamaloo/homekit_mcp.git
    cd homekit_mcp/HomeKitMCP
    ```
 
 2. **Configure your development team:**
+
    ```bash
    cp Local.xcconfig.template Local.xcconfig
    ```
+
    Open `Local.xcconfig` and replace `YOUR_TEAM_ID_HERE` with your [Apple Development Team ID](https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/).
+   Set `BUNDLE_ID_PREFIX` to a reverse-DNS prefix you own (for example `com.yourname`).
    This file is gitignored so your credentials stay local.
 
+   Then register `<prefix>.HomeKitMCP` as an explicit App ID with the **HomeKit** capability in the [developer portal](https://developer.apple.com/account/resources/identifiers/list). Automatic signing otherwise falls back to the team wildcard profile, which cannot carry the HomeKit entitlement.
+
 3. **Open in Xcode:**
+
    ```bash
    open HomeKitMCP.xcodeproj
    ```
+
    The project will pick up your team ID from `Local.xcconfig` automatically. The HomeKit entitlement is already configured.
 
 4. **Set the destination** to **My Mac (Mac Catalyst)** in the Xcode toolbar
@@ -39,6 +47,7 @@ Built as a Mac Catalyst app using the native HomeKit framework and the [official
 6. **Grant HomeKit access** when macOS prompts for permission on first launch
 
 The built app will be located at:
+
 ```
 ~/Library/Developer/Xcode/DerivedData/HomeKitMCP-<hash>/Build/Products/Debug-maccatalyst/HomeKitMCP.app
 ```
@@ -118,6 +127,7 @@ The `--headless` flag runs the server without the menu bar status item, which is
 ### Device Addressing
 
 Devices can be addressed by:
+
 - **Name** (case-insensitive): `"name": "Living Room Light"`
 - **Unique ID** (from `list_devices`): `"id": "ABC123-DEF456"` — preferred when multiple devices share a name
 - **Name + qualifiers**: add `"home"` and/or `"room"` to disambiguate
@@ -163,17 +173,20 @@ MCP Client (Claude, etc.)
 ## Troubleshooting
 
 **"HomeKit permission denied" or no devices found:**
+
 - Open **System Settings > Privacy & Security > HomeKit** and ensure HomeKitMCP is allowed
 - Make sure you have at least one home configured in the Apple Home app
 - The Mac must be signed into the same iCloud account as your Home setup
 
 **Build fails with signing errors:**
+
 - Make sure you've created `Local.xcconfig` from the template and set your Team ID
 - Alternatively, select a team manually in Xcode under Signing & Capabilities
 - A free Apple Developer account works, but the app must be re-signed every 7 days
 - A paid account ($99/year) provides longer-lived signing
 
 **MCP client can't connect:**
+
 - Verify the path in your MCP config points to the actual built `.app` bundle
 - Make sure you're pointing to `Contents/MacOS/HomeKitMCP` inside the `.app`
 - Check that the app has been run at least once manually to grant HomeKit permission
