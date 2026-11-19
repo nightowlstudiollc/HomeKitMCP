@@ -1,0 +1,50 @@
+name: Test
+
+# Ad-hoc signed, no entitlements: CI has no team certificates, and the
+# tests use MockHomeKitManager, not HomeKit.
+
+# Job name `test` is the sanity check in dependabot-auto-merge.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Create Local.xcconfig
+        # The project requires this file. The template's placeholder values
+        # are fine: the signing overrides below replace the team.
+        run: cp Local.xcconfig.template Local.xcconfig
+
+      - name: Build and test
+        run: |
+          xcodebuild test \
+            -project HomeKitMCP.xcodeproj \
+            -scheme HomeKitMCP \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            PROVISIONING_PROFILE_SPECIFIER= \
+            CODE_SIGN_ENTITLEMENTS=
