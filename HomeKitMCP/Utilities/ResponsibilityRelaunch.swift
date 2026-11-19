@@ -48,7 +48,11 @@ enum ResponsibilityRelaunch {
         let setDisclaim = unsafeBitCast(symbol, to: SetDisclaim.self)
 
         var attr: posix_spawnattr_t?
-        posix_spawnattr_init(&attr)
+        let initResult = posix_spawnattr_init(&attr)
+        guard initResult == 0 else {
+            Log.error("ResponsibilityRelaunch: posix_spawnattr_init failed: \(String(cString: strerror(initResult))); running without disclaim")
+            return
+        }
         defer { posix_spawnattr_destroy(&attr) }
 
         let disclaimResult = setDisclaim(&attr, 1)
@@ -57,22 +61,38 @@ enum ResponsibilityRelaunch {
             return
         }
 
+        // The child starts with an empty signal mask, not the parent's blocked one.
+        var emptyMask = sigset_t()
+        sigemptyset(&emptyMask)
+        posix_spawnattr_setsigmask(&attr, &emptyMask)
+        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGMASK))
+
         let envStrings = childEnvironment(from: info.environment).map { "\($0.key)=\($0.value)" }
         var envp: [UnsafeMutablePointer<CChar>?] = envStrings.map { strdup($0) } + [nil]
         defer { envp.forEach { free($0) } }
 
+        // Block the forwarded signals until childPID and the handlers are set,
+        // so a signal in that window is held, then forwarded, not lost.
+        var forwarded = sigset_t()
+        sigemptyset(&forwarded)
+        for sig in forwardedSignals { sigaddset(&forwarded, sig) }
+        var previousMask = sigset_t()
+        sigprocmask(SIG_BLOCK, &forwarded, &previousMask)
+
         var pid: pid_t = 0
         let spawnResult = posix_spawn(&pid, executable, nil, &attr, CommandLine.unsafeArgv, &envp)
         guard spawnResult == 0 else {
+            sigprocmask(SIG_SETMASK, &previousMask, nil)
             Log.error("ResponsibilityRelaunch: posix_spawn failed: \(String(cString: strerror(spawnResult))); running without disclaim")
             return
         }
 
-        Log.info("ResponsibilityRelaunch: started disclaimed child pid \(pid)")
         childPID = pid
-        for sig in [SIGINT, SIGTERM, SIGHUP] {
+        for sig in forwardedSignals {
             signal(sig, forwardSignalToChild)
         }
+        sigprocmask(SIG_SETMASK, &previousMask, nil)
+        Log.info("ResponsibilityRelaunch: started disclaimed child pid \(pid)")
 
         var status: Int32 = 0
         while waitpid(pid, &status, 0) == -1 {
@@ -84,6 +104,8 @@ enum ResponsibilityRelaunch {
         exit(exitCode(fromWaitStatus: status))
     }
 }
+
+private let forwardedSignals: [Int32] = [SIGINT, SIGTERM, SIGHUP]
 
 /// The child's pid, read by the C signal handler below.
 private var childPID: pid_t = 0
