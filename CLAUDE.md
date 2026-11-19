@@ -57,6 +57,7 @@ Update the tool and device-type tables in `README.md` too.
 
 ### Lifecycle and process exit
 
+- The entry point is `main.swift`, not `@main`. With `--headless`, `ResponsibilityRelaunch` first re-spawns the binary with TCC responsibility disclaimed, then waits and forwards signals. Without it, an MCP client spawning the binary makes the client's host app (for example iTerm2) the TCC responsible process. That app lacks `NSHomeKitUsageDescription`, so TCC kills the server with SIGABRT on the first HomeKit call. To reproduce or verify, pipe an `initialize` request into `HomeKitMCP --headless` from a terminal.
 - `HomeKitMCPApp` creates `MCPServerManager(startServer: false)` and starts the server from a view `.task`. That way the test host process never starts a stdio server. Tests construct `MCPServerManager(homeKitManager: mock, startServer: false)` and call `handleToolCall` directly.
 - The process calls `exit()` when stdin closes, on SIGINT/SIGTERM (handled through `DispatchSource`), and on `willTerminate`. Code after `server.waitUntilCompleted()` does not return.
 - **stdout is the JSON-RPC channel.** All logging goes to stderr through `Log` (`Utilities/Logger.swift`). Never `print()` to stdout.
