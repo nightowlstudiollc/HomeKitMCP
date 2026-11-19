@@ -28,6 +28,8 @@ xcodebuild ... test -only-testing:HomeKitMCPTests/MCPServerManagerTests/listHome
 
 Tests use Swift Testing (`import Testing`, `@Test`, `#expect`), not XCTest.
 
+MCP client configs should point at an installed copy in `~/Applications/HomeKitMCP.app`, not at DerivedData. README "Installing" has the Release build and `ditto` commands. Claude Code, the ChatGPT desktop app, and Codex all launch the binary over stdio; ChatGPT and Codex read `~/.codex/config.toml`.
+
 CI (`.github/workflows/test.yml`) runs the same `xcodebuild test` on a hosted `macos-26` runner. It uses ad-hoc signing with no team and no entitlements, which works because the tests use `MockHomeKitManager` and never touch HomeKit. The job name `test` is the sanity check that `dependabot-auto-merge.yml` names, so keep the two in sync.
 
 ## Architecture
