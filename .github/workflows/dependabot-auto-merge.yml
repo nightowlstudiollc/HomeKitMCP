@@ -1,0 +1,25 @@
+name: Dependabot Auto-Merge
+
+# Caller for the smartwatermelon/github-workflows gate. It merges a
+# Dependabot PR when every check passes.
+
+# Pin the floating dependabot-auto-merge/v3 tag, never a dash-form tag.
+
+# Never add actions/checkout: no PR code runs here.
+
+on: # zizmor: ignore[dangerous-triggers] required to run from base branch; no PR code executed here
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot-auto-merge:
+    uses: smartwatermelon/github-workflows/.github/workflows/dependabot-auto-merge.yml@dependabot-auto-merge/v3
+    with:
+      sanity_checks: 'test' # .github/workflows/test.yml: build and unit tests
+    secrets: # these two by name; never `secrets: inherit`
+      MERGE_APP_CLIENT_ID: ${{ secrets.MERGE_APP_CLIENT_ID }}
+      MERGE_APP_PRIVATE_KEY: ${{ secrets.MERGE_APP_PRIVATE_KEY }}
