@@ -4,6 +4,16 @@ A macOS app that bridges Apple HomeKit with the [Model Context Protocol](https:/
 
 Built as a Mac Catalyst app using the native HomeKit framework and the [official Swift MCP SDK](https://github.com/modelcontextprotocol/swift-sdk). Runs headless with an optional menu bar status item.
 
+This repository is a fork of [grahamaloo/HomeKitMCP](https://github.com/grahamaloo/HomeKitMCP). See [Changes in this fork](#changes-in-this-fork).
+
+## Changes in this fork
+
+- **MCP clients launched from a terminal no longer crash the server.** An MCP client spawns the binary directly. Before this fix, macOS made the client's host app (for example iTerm2) the TCC "responsible process" for HomeKit. That app has no HomeKit usage description. So TCC killed the server (SIGABRT, exit 134) on the first HomeKit call, and the client reported "Connection closed". With `--headless`, the app now re-launches itself with TCC responsibility disclaimed. macOS then checks HomeKitMCP's own permission. Chromium and LLDB use the same mechanism.
+- **Configurable bundle ID.** `Local.xcconfig` sets `BUNDLE_ID_PREFIX`, so you can sign with your own App ID instead of editing the project.
+- **Builds with Xcode 27.** The Swift MCP SDK is updated to 0.12.1. Earlier versions fail to compile with the Xcode 27 Swift compiler.
+- **CI.** GitHub Actions runs the unit tests on every pull request.
+- **Tests updated** for the current tool set (10 tools) and the new relaunch logic.
+
 ## Prerequisites
 
 - **macOS 15.0+**
@@ -16,8 +26,8 @@ Built as a Mac Catalyst app using the native HomeKit framework and the [official
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/grahamaloo/homekit_mcp.git
-   cd homekit_mcp/HomeKitMCP
+   git clone https://github.com/nightowlstudiollc/HomeKitMCP.git
+   cd HomeKitMCP
    ```
 
 2. **Configure your development team:**
@@ -54,22 +64,43 @@ The built app will be located at:
 
 > **Tip:** To find the exact path, right-click the app in Xcode's Products group and select "Show in Finder", or use `xcodebuild -showBuildSettings | grep BUILT_PRODUCTS_DIR`.
 
+## Installing
+
+Point MCP clients at an installed copy, not at the DerivedData build. The DerivedData path changes, and Xcode replaces the app on every build. Build a Release copy and install it in `~/Applications`:
+
+```bash
+xcodebuild -project HomeKitMCP.xcodeproj -scheme HomeKitMCP -configuration Release \
+  -destination 'platform=macOS,variant=Mac Catalyst' \
+  -derivedDataPath build -allowProvisioningUpdates build
+mkdir -p ~/Applications
+ditto build/Build/Products/Release-maccatalyst/HomeKitMCP.app ~/Applications/HomeKitMCP.app
+```
+
+To update, run the same commands again. macOS may ask again for HomeKit access after an update.
+
+To test the installed copy from a terminal, send it an `initialize` request and a `list_homes` call:
+
+```bash
+( printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_homes","arguments":{}}}'
+  sleep 8 ) | ~/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP --headless
+```
+
+The second response lists your homes.
+
 ## Configuration
+
+The examples below use the install path from [Installing](#installing). Replace `<you>` with your macOS user name.
 
 ### Claude Code
 
-Add to `~/.claude/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "homekit": {
-      "command": "/path/to/HomeKitMCP.app/Contents/MacOS/HomeKitMCP",
-      "args": ["--headless"]
-    }
-  }
-}
+```bash
+claude mcp add -s user homekit -- ~/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP --headless
 ```
+
+Check it with `claude mcp get homekit`. The status should be "Connected". Restart Claude Code to load the tools.
 
 ### Claude Desktop
 
@@ -79,14 +110,37 @@ Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/cla
 {
   "mcpServers": {
     "homekit": {
-      "command": "/path/to/HomeKitMCP.app/Contents/MacOS/HomeKitMCP",
+      "command": "/Users/<you>/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP",
       "args": ["--headless"]
     }
   }
 }
 ```
 
-Replace `/path/to/` with the actual path to your built `.app` bundle.
+### ChatGPT desktop app and Codex
+
+The ChatGPT desktop app, the Codex CLI, and the Codex IDE extension share one MCP configuration, `~/.codex/config.toml` ([OpenAI docs](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)). Add the server in one of three ways:
+
+- **ChatGPT desktop app:** open **Settings**, then **MCP servers**, then **Add server**. Enter the name `homekit`, choose **STDIO**, set the command to `/Users/<you>/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP`, and add the argument `--headless`. Save, then select **Restart**.
+- **Codex CLI:**
+
+  ```bash
+  codex mcp add homekit -- ~/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP --headless
+  ```
+
+- **Edit `~/.codex/config.toml`:**
+
+  ```toml
+  [mcp_servers.homekit]
+  command = "/Users/<you>/Applications/HomeKitMCP.app/Contents/MacOS/HomeKitMCP"
+  args = ["--headless"]
+  ```
+
+  Use the full path here. TOML doesn't expand `~`.
+
+ChatGPT on the web (chatgpt.com) can't use this server. It can't start a process on your Mac, and this server has only the stdio transport. Use the desktop app.
+
+### Notes for all clients
 
 The `--headless` flag runs the server without the menu bar status item, which is recommended when launched by an MCP client.
 
@@ -146,8 +200,12 @@ Once configured, you can ask Claude (or any MCP-compatible LLM) things like:
 ## Architecture
 
 ```
-MCP Client (Claude, etc.)
+MCP Client (Claude, ChatGPT desktop, etc.)
         | (stdin/stdout JSON-RPC 2.0)
+        v
+HomeKitMCP --headless (parent: re-launches itself
+        |               with TCC responsibility
+        |               disclaimed, forwards signals)
         v
 +---------------------------+
 |  HomeKitMCP.app            |
@@ -190,6 +248,8 @@ MCP Client (Claude, etc.)
 - Verify the path in your MCP config points to the actual built `.app` bundle
 - Make sure you're pointing to `Contents/MacOS/HomeKitMCP` inside the `.app`
 - Check that the app has been run at least once manually to grant HomeKit permission
+- Run the terminal test in [Installing](#installing). Exit status 134 means TCC killed the server. Install a build with the relaunch fix (see [Changes in this fork](#changes-in-this-fork))
+- Errors go to stderr. Run the binary from a terminal to see them
 
 ## License
 
