@@ -64,8 +64,12 @@ enum ResponsibilityRelaunch {
         // The child starts with an empty signal mask, not the parent's blocked one.
         var emptyMask = sigset_t()
         sigemptyset(&emptyMask)
-        posix_spawnattr_setsigmask(&attr, &emptyMask)
-        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGMASK))
+        let maskResult = posix_spawnattr_setsigmask(&attr, &emptyMask)
+        let flagsResult = posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGMASK))
+        guard maskResult == 0, flagsResult == 0 else {
+            Log.error("ResponsibilityRelaunch: spawn signal-mask setup failed (\(maskResult), \(flagsResult)); running without disclaim")
+            return
+        }
 
         let envStrings = childEnvironment(from: info.environment).map { "\($0.key)=\($0.value)" }
         var envp: [UnsafeMutablePointer<CChar>?] = envStrings.map { strdup($0) } + [nil]
@@ -77,7 +81,10 @@ enum ResponsibilityRelaunch {
         sigemptyset(&forwarded)
         for sig in forwardedSignals { sigaddset(&forwarded, sig) }
         var previousMask = sigset_t()
-        sigprocmask(SIG_BLOCK, &forwarded, &previousMask)
+        guard sigprocmask(SIG_BLOCK, &forwarded, &previousMask) == 0 else {
+            Log.error("ResponsibilityRelaunch: sigprocmask failed: \(String(cString: strerror(errno))); running without disclaim")
+            return
+        }
 
         var pid: pid_t = 0
         let spawnResult = posix_spawn(&pid, executable, nil, &attr, CommandLine.unsafeArgv, &envp)
